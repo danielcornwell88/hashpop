@@ -1,3 +1,2 @@
-Kraken allows the creation of rainbow tables using a single command line. 
-
-
+hashpop is a python library written to be usable by anyone to test the effectiveness of single or collections of hashes. 
+It is computationally slow. 
