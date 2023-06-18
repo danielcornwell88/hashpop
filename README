@@ -1,7 +1,8 @@
-hashpop is easy to use.
+hashpop is easy to use, designed to passively monitor network traffic while building hash lists. 
 
 features:
 create rainbow tables
+create password lists
 pop hashes
 analyse wired and wireless traffic
 detect hash types from traffic
