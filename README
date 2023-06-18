@@ -1,2 +1,8 @@
-hashpop is a python library written to be usable by anyone to test the effectiveness of single or collections of hashes. 
-It is computationally slow. 
+hashpop is easy to use.
+
+features:
+create rainbow tables
+pop hashes
+analyse wired and wireless traffic
+detect hash types from traffic
+open a persistent channel with compromised credentials
