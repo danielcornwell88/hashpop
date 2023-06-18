@@ -1,0 +1,85 @@
+import argparse
+import hashlib
+import itertools
+import os
+import string
+
+
+def generate_rainbow_table(lmin, lmax, num=False, lower=False, upper=False, specials=False, hash_function='md5'):
+    characters = ""
+    if num:
+        characters += string.digits
+    if lower:
+        characters += string.ascii_lowercase
+    if upper:
+        characters += string.ascii_uppercase
+    if specials:
+        characters += string.punctuation
+    
+    table = {}
+    
+    hash_constructor = getattr(hashlib, hash_function.lower(), None)
+    if not hash_constructor:
+        raise ValueError(f"Invalid hash algorithm: {hash_function}")
+    
+    for length in range(lmin, lmax + 1):
+        combinations = itertools.product(characters, repeat=length)
+        
+        for combination in combinations:
+            plaintext = ''.join(combination)
+            hash_obj = hash_constructor(plaintext.encode())
+            hash_value = hash_obj.hexdigest()
+            
+            if hash_value not in table:
+                table[hash_value] = plaintext
+    
+    return table
+
+
+def save_rainbow_table(table, output, filename):
+    os.makedirs(output, exist_ok=True)
+    
+    file_path = os.path.join(output, filename + '.txt')
+    
+    with open(file_path, 'w') as file:
+        for hash_value, plaintext in table.items():
+            file.write(f'{hash_value}: {plaintext}\n')
+    
+    print(f'Rainbow table saved to {file_path}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Rainbow Table Generator')
+    parser.add_argument('--min', type=int, default=1, help='Minimum length of plaintext')
+    parser.add_argument('--max', type=int, default=4, help='Maximum length of plaintext')
+    parser.add_argument('--num', action='store_true', help='Include numbers in plaintext')
+    parser.add_argument('--lower', action='store_true', help='Include lowercase letters in plaintext')
+    parser.add_argument('--upper', action='store_true', help='Include uppercase letters in plaintext')
+    parser.add_argument('--special', action='store_true', help='Include special characters in plaintext')
+    parser.add_argument('--hash', default='md5', help='Hash algorithm to use')
+    parser.add_argument('--output', help='Folder to save the rainbow table')
+    parser.add_argument('--filename', help='Filename for the output')
+
+    args = parser.parse_args()
+
+    if not args.filename:
+        args.filename = args.hash.lower() + '_rainbow_table'
+    
+    if not args.output:
+        args.output = os.getcwd()
+
+    rainbow_table = generate_rainbow_table(
+        args.min,
+        args.max,
+        num=args.num,
+        lower=args.lower,
+        upper=args.upper,
+        specials=args.special,
+        hash_function=args.hash
+    )
+
+    save_rainbow_table(rainbow_table, args.output, args.filename)
+
+
+if __name__ == '__main__':
+    main()
