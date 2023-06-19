@@ -1,0 +1,123 @@
+import argparse
+import hashlib
+import itertools
+import os
+import string
+from tqdm import tqdm
+from multiprocessing import Pool
+import cupy as cp
+
+
+def generate_hash(plaintext, hash_obj):
+    hash_obj.update(plaintext.encode())  # Update the hash object with the plaintext
+    return f'{hash_obj.hexdigest()}: {plaintext}\n'
+
+
+def generate_rainbow_table_worker(args):
+    plaintext, hash_constructor = args
+    hash_obj = hash_constructor()  # Create a hash object for each worker
+    return generate_hash(plaintext, hash_obj)
+
+
+def generate_rainbow_table(lmin, lmax, num=False, lower=False, upper=False, specials=False, hash_function='md5',
+                           output=None, filename=None, save_interval=100000, use_gpu=False):
+    characters = ''
+    if num:
+        characters += string.digits
+    if lower:
+        characters += string.ascii_lowercase
+    if upper:
+        characters += string.ascii_uppercase
+    if specials:
+        characters += string.punctuation
+
+    hash_constructor = getattr(hashlib, hash_function.lower(), None)
+    if not hash_constructor:
+        raise ValueError(f"Invalid hash algorithm: {hash_function}")
+
+    total_combinations = sum(len(characters) ** length for length in range(lmin, lmax + 1))
+    progress_bar = tqdm(total=total_combinations, unit='combination', ncols=80, dynamic_ncols=True,
+                        unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
+
+    file_path = os.path.join(output, filename + '.txt')
+
+    batch_size = save_interval // 100
+    plaintext_buffer = []
+    batch_count = 0
+
+    with open(file_path, 'a', buffering=1024 * 1024) as file:
+        hash_constructor = getattr(hashlib, hash_function.lower(), None)
+        pool = Pool()
+
+        for length in range(lmin, lmax + 1):
+            combinations = itertools.product(characters, repeat=length)
+
+            for combination in combinations:
+                plaintext = ''.join(combination)
+                plaintext_buffer.append((plaintext, hash_constructor))
+
+                if len(plaintext_buffer) >= batch_size:
+                    if use_gpu:
+                        results = cp.asarray(plaintext_buffer)
+                        results = cp.asarray(pool.map(generate_rainbow_table_worker, results))
+                        results = cp.asnumpy(results)
+                        file.write(''.join(results))
+                    else:
+                        results = pool.map(generate_rainbow_table_worker, plaintext_buffer)
+                        file.write(''.join(results))
+                    plaintext_buffer.clear()
+                    batch_count += 1
+
+                    if batch_count >= 10:
+                        file.flush()  # Flush the buffer to disk every 10 batches
+                        batch_count = 0
+
+                progress_bar.update(1)
+
+        if plaintext_buffer:
+            if use_gpu:
+                results = cp.asarray(plaintext_buffer)
+                results = cp.asarray(pool.map(generate_rainbow_table_worker, results))
+                results = cp.asnumpy(results)
+                file.write(''.join(results))
+            else:
+                results = pool.map(generate_rainbow_table_worker, plaintext_buffer)
+                file.write(''.join(results))
+
+    progress_bar.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Rainbow Table Generator')
+    parser.add_argument('--min', type=int, default=1, help='Minimum length of plaintext')
+    parser.add_argument('--max', type=int, default=4, help='Maximum length of plaintext')
+    parser.add_argument('--num', action='store_true', help='Include numbers in plaintext')
+    parser.add_argument('--lower', action='store_true', help='Include lowercase letters in plaintext')
+    parser.add_argument('--upper', action='store_true', help='Include uppercase letters in plaintext')
+    parser.add_argument('--special', action='store_true', help='Include special characters in plaintext')
+    parser.add_argument('--hash', default='md5', help='Hash algorithm to use')
+    parser.add_argument('--output', required=True, help='Folder to save the rainbow table')
+    parser.add_argument('--filename', required=True, help='Filename for the output')
+    parser.add_argument('--save-interval', type=int, default=10000000,
+                        help='Interval to save the rainbow table (number of combinations)')
+    parser.add_argument('--gpu', action='store_true', help='Use GPU for computation')
+
+    args = parser.parse_args()
+
+    generate_rainbow_table(
+        args.min,
+        args.max,
+        num=args.num,
+        lower=args.lower,
+        upper=args.upper,
+        specials=args.special,
+        hash_function=args.hash,
+        output=args.output,
+        filename=args.filename,
+        save_interval=args.save_interval,
+        use_gpu=args.gpu
+    )
+
+
+if __name__ == '__main__':
+    main()
