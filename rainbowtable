@@ -3,49 +3,64 @@ import hashlib
 import itertools
 import os
 import string
+from tqdm import tqdm
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 
 
-def generate_rainbow_table(lmin, lmax, num=False, lower=False, upper=False, specials=False, hash_function='md5'):
-    characters = ""
+def generate_rainbow_table(lmin, lmax, num=False, lower=False, upper=False, specials=False, hash_function='md5', output=None, filename=None, save_interval=100000, use_gpu=False):
+    characters = []
     if num:
-        characters += string.digits
+        characters.extend(string.digits)
     if lower:
-        characters += string.ascii_lowercase
+        characters.extend(string.ascii_lowercase)
     if upper:
-        characters += string.ascii_uppercase
+        characters.extend(string.ascii_uppercase)
     if specials:
-        characters += string.punctuation
-    
-    table = {}
-    
+        characters.extend(string.punctuation)
+
+    if use_gpu:
+        try:
+            cp.cuda.Device(0).use()
+        except cp.cuda.runtime.CUDARuntimeError:
+            print("No compatible GPU found. Falling back to CPU.")
+            use_gpu = False
+
     hash_constructor = getattr(hashlib, hash_function.lower(), None)
     if not hash_constructor:
         raise ValueError(f"Invalid hash algorithm: {hash_function}")
-    
-    for length in range(lmin, lmax + 1):
-        combinations = itertools.product(characters, repeat=length)
-        
-        for combination in combinations:
-            plaintext = ''.join(combination)
-            hash_obj = hash_constructor(plaintext.encode())
-            hash_value = hash_obj.hexdigest()
-            
-            if hash_value not in table:
-                table[hash_value] = plaintext
-    
-    return table
 
+    total_combinations = sum(len(characters) ** length for length in range(lmin, lmax + 1))
+    progress_bar = tqdm(total=total_combinations, unit='combination', ncols=80, dynamic_ncols=True, unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
 
-def save_rainbow_table(table, output, filename):
-    os.makedirs(output, exist_ok=True)
-    
     file_path = os.path.join(output, filename + '.txt')
-    
-    with open(file_path, 'w') as file:
-        for hash_value, plaintext in table.items():
-            file.write(f'{hash_value}: {plaintext}\n')
-    
-    print(f'Rainbow table saved to {file_path}')
+
+    with open(file_path, 'a') as file:
+        combination_count = 0
+        hash_obj = hash_constructor()  # Create a single hash object
+
+        for length in range(lmin, lmax + 1):
+            combinations = itertools.product(characters, repeat=length)
+
+            for combination in combinations:
+                plaintext = ''.join(combination)
+                if use_gpu:
+                    plaintext = cp.asarray(plaintext)
+
+                hash_obj.update(plaintext.encode())  # Update the hash object with the plaintext
+                hash_value = hash_obj.hexdigest()
+
+                file.write('{}: {}\n'.format(hash_value, plaintext))
+
+                combination_count += 1
+                if combination_count % save_interval == 0:
+                    pass  # No need to flush the file
+
+                progress_bar.update(1)
+
+    progress_bar.close()
 
 
 def main():
@@ -57,28 +72,26 @@ def main():
     parser.add_argument('--upper', action='store_true', help='Include uppercase letters in plaintext')
     parser.add_argument('--special', action='store_true', help='Include special characters in plaintext')
     parser.add_argument('--hash', default='md5', help='Hash algorithm to use')
-    parser.add_argument('--output', help='Folder to save the rainbow table')
-    parser.add_argument('--filename', help='Filename for the output')
+    parser.add_argument('--output', required=True, help='Folder to save the rainbow table')
+    parser.add_argument('--filename', required=True, help='Filename for the output')
+    parser.add_argument('--save-interval', type=int, default=10000000, help='Interval to save the rainbow table (number of combinations)')
+    parser.add_argument('--gpu', action='store_true', help='Use GPU for computation')
 
     args = parser.parse_args()
 
-    if not args.filename:
-        args.filename = args.hash.lower() + '_rainbow_table'
-    
-    if not args.output:
-        args.output = os.getcwd()
-
-    rainbow_table = generate_rainbow_table(
+    generate_rainbow_table(
         args.min,
         args.max,
         num=args.num,
         lower=args.lower,
         upper=args.upper,
         specials=args.special,
-        hash_function=args.hash
+        hash_function=args.hash,
+        output=args.output,
+        filename=args.filename,
+        save_interval=args.save_interval,
+        use_gpu=args.gpu
     )
-
-    save_rainbow_table(rainbow_table, args.output, args.filename)
 
 
 if __name__ == '__main__':
