@@ -1,0 +1,27 @@
+import hashlib
+import sys
+
+def determine_hash_algorithm(hash_value):
+    algorithms = hashlib.algorithms_guaranteed
+    for algorithm in algorithms:
+        try:
+            hashlib.new(algorithm, b'').hexdigest()
+        except ValueError:
+            continue
+        hasher = hashlib.new(algorithm)
+        hasher.update(b'Testing')
+        if hasher.hexdigest() == hash_value:
+            return algorithm
+    return None
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python hash_algorithm.py <hash_value>")
+        sys.exit(1)
+
+    hash_value = sys.argv[1]
+    algorithm = determine_hash_algorithm(hash_value)
+    if algorithm:
+        print(f"The hash was likely produced using the {algorithm.upper()} algorithm.")
+    else:
+        print("Unable to determine the hashing algorithm used.")
